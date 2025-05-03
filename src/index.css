@@ -1,0 +1,105 @@
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 250 33% 99%;
+    --foreground: 250 10% 15%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 250 10% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 250 10% 15%;
+
+    --primary: 252 83% 75%;
+    --primary-foreground: 250 33% 99%;
+
+    --secondary: 250 33% 95%;
+    --secondary-foreground: 250 10% 15%;
+
+    --muted: 250 33% 95%;
+    --muted-foreground: 250 5% 45%;
+
+    --accent: 252 83% 94%;
+    --accent-foreground: 250 10% 15%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 250 20% 90%;
+    --input: 250 20% 90%;
+    --ring: 252 83% 75%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 250 20% 5%;
+    --foreground: 250 10% 95%;
+
+    --card: 250 20% 8%;
+    --card-foreground: 250 10% 95%;
+
+    --popover: 250 20% 8%;
+    --popover-foreground: 250 10% 95%;
+
+    --primary: 252 83% 75%;
+    --primary-foreground: 250 20% 10%;
+
+    --secondary: 250 20% 15%;
+    --secondary-foreground: 250 10% 95%;
+
+    --muted: 250 20% 15%;
+    --muted-foreground: 250 10% 65%;
+
+    --accent: 252 83% 20%;
+    --accent-foreground: 250 10% 95%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 250 10% 95%;
+
+    --border: 250 20% 18%;
+    --input: 250 20% 18%;
+    --ring: 252 83% 65%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-traceMate text-white px-4 py-2 rounded-md hover:bg-traceMate-dark transition-colors duration-300;
+  }
+  
+  .btn-secondary {
+    @apply bg-secondary text-foreground px-4 py-2 rounded-md hover:bg-muted transition-colors duration-300;
+  }
+  
+  .card-hover {
+    @apply hover:shadow-lg transition-shadow duration-300;
+  }
+  
+  .glass-card {
+    @apply bg-white/70 dark:bg-black/50 backdrop-blur-md border border-border rounded-lg shadow-sm;
+  }
+}
