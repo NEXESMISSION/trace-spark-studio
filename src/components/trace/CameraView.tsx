@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Camera, CameraOff, Settings, RefreshCw } from 'lucide-react';
+import { Camera, CameraOff, Settings, RefreshCw, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { 
@@ -9,6 +9,8 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogDescription,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -21,6 +23,9 @@ interface CameraViewProps {
   onCameraError: (error: Error) => void;
   isFrontCamera: boolean;
 }
+
+// LocalStorage key for camera permissions
+const CAMERA_PERMISSION_KEY = 'trace_camera_permission_status';
 
 const CameraView: React.FC<CameraViewProps> = ({ 
   isEnabled,
@@ -38,6 +43,7 @@ const CameraView: React.FC<CameraViewProps> = ({
   const [contrast, setContrast] = useState(100);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [showPermissionDialog, setShowPermissionDialog] = useState(false);
   const { toast } = useToast();
 
   // Load saved camera preferences from session storage
@@ -48,6 +54,17 @@ const CameraView: React.FC<CameraViewProps> = ({
         if (savedPrefs.deviceId) setSelectedDeviceId(savedPrefs.deviceId);
         setBrightness(savedPrefs.brightness);
         setContrast(savedPrefs.contrast);
+      }
+      
+      // Check if we have a saved permission status
+      const permissionStatus = localStorage.getItem(CAMERA_PERMISSION_KEY);
+      if (permissionStatus === 'granted') {
+        setHasPermission(true);
+      } else if (permissionStatus === 'denied') {
+        setHasPermission(false);
+      } else {
+        // If no saved status, show the permission dialog
+        setShowPermissionDialog(true);
       }
     } catch (error) {
       console.error('Error loading camera preferences:', error);
@@ -96,26 +113,106 @@ const CameraView: React.FC<CameraViewProps> = ({
     }
   }, [selectedDeviceId]);
 
+  // Save permission status to localStorage
+  const savePermissionStatus = (status: 'granted' | 'denied' | 'prompt') => {
+    try {
+      localStorage.setItem(CAMERA_PERMISSION_KEY, status);
+    } catch (error) {
+      console.error('Error saving camera permission status:', error);
+    }
+  };
+
+  // Request camera permissions explicitly
+  const requestCameraPermission = async () => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    
+    try {
+      // Close the permission dialog if it's open
+      setShowPermissionDialog(false);
+      
+      // Request camera permission
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      
+      // Stop the stream immediately, we just needed permissions
+      stream.getTracks().forEach(track => track.stop());
+      
+      // Now get the devices with labels
+      await getDevices();
+      setHasPermission(true);
+      savePermissionStatus('granted');
+      
+      // Show success toast
+      toast({
+        title: "Camera access granted",
+        description: "You can now use the tracing features.",
+        variant: "default",
+      });
+      
+      // If enabled is true, start the camera
+      if (isEnabled) {
+        startCamera();
+      }
+    } catch (err) {
+      console.error('Error requesting camera permission:', err);
+      setHasPermission(false);
+      savePermissionStatus('denied');
+      setErrorMessage('Camera permission denied');
+      
+      // Try to get devices anyway, they just won't have labels
+      getDevices();
+      
+      // Show error toast
+      if (err instanceof Error) {
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          toast({
+            title: "Camera access denied",
+            description: "Please allow camera access to use tracing features.",
+            variant: "destructive",
+          });
+        }
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Initialize camera devices with permissions
   useEffect(() => {
+    // Only auto-initialize if we don't have a saved permission status
+    // or if permission was previously granted
+    const permissionStatus = localStorage.getItem(CAMERA_PERMISSION_KEY);
+    
     const initializeDevices = async () => {
       setIsLoading(true);
       setErrorMessage(null);
       
       try {
-        // Request permissions first to get labeled devices
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        
-        // Stop the stream immediately, we just needed permissions
-        stream.getTracks().forEach(track => track.stop());
-        
-        // Now get the devices with labels
-        await getDevices();
-        setHasPermission(true);
+        if (permissionStatus === 'granted') {
+          // We already have permission, just get devices
+          await getDevices();
+          setHasPermission(true);
+        } else if (!showPermissionDialog && permissionStatus !== 'denied') {
+          // If we're not showing the dialog and haven't been denied, try to get permission
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          
+          // Stop the stream immediately, we just needed permissions
+          stream.getTracks().forEach(track => track.stop());
+          
+          // Now get the devices with labels
+          await getDevices();
+          setHasPermission(true);
+          savePermissionStatus('granted');
+        }
       } catch (err) {
         console.error('Error requesting initial camera permission:', err);
-        setHasPermission(false);
-        setErrorMessage('Camera permission denied');
+        
+        // Only set hasPermission to false if we're not showing the dialog
+        if (!showPermissionDialog) {
+          setHasPermission(false);
+          savePermissionStatus('denied');
+          setErrorMessage('Camera permission denied');
+        }
         
         // Try to get devices anyway, they just won't have labels
         getDevices();
@@ -124,8 +221,11 @@ const CameraView: React.FC<CameraViewProps> = ({
       }
     };
     
-    initializeDevices();
-  }, [getDevices]);
+    // Only run if the permission dialog is not showing
+    if (!showPermissionDialog) {
+      initializeDevices();
+    }
+  }, [getDevices, showPermissionDialog]);
 
   useEffect(() => {
     if (isEnabled) {
@@ -140,6 +240,14 @@ const CameraView: React.FC<CameraViewProps> = ({
     setErrorMessage(null);
     
     try {
+      // Check if we have permission first
+      if (hasPermission === false) {
+        // Show permission dialog if denied
+        setShowPermissionDialog(true);
+        setIsLoading(false);
+        return;
+      }
+      
       // Stop any existing streams first
       if (streamRef.current) {
         stopCamera();
@@ -178,7 +286,7 @@ const CameraView: React.FC<CameraViewProps> = ({
                 setCameraActive(true);
                 onCameraReady(stream);
                 
-                // Save camera preferences
+                // Save camera preferences and permission status
                 saveCameraPreferences({
                   deviceId: selectedDeviceId,
                   isFrontCamera,
@@ -186,6 +294,7 @@ const CameraView: React.FC<CameraViewProps> = ({
                   contrast,
                   enabled: true
                 });
+                savePermissionStatus('granted');
                 
                 setIsLoading(false);
               })
@@ -200,7 +309,6 @@ const CameraView: React.FC<CameraViewProps> = ({
       }
     } catch (error) {
       console.error('Error accessing camera:', error);
-      setHasPermission(false);
       setCameraActive(false);
       setIsLoading(false);
       
@@ -210,11 +318,9 @@ const CameraView: React.FC<CameraViewProps> = ({
         setErrorMessage(error.message);
         
         if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
-          toast({
-            title: "Camera access denied",
-            description: "Please allow camera access to use tracing features.",
-            variant: "destructive",
-          });
+          setHasPermission(false);
+          savePermissionStatus('denied');
+          setShowPermissionDialog(true);
         } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
           toast({
             title: "Camera not found",
@@ -330,21 +436,70 @@ const CameraView: React.FC<CameraViewProps> = ({
         </div>
       )}
       
+      {/* Permission dialog */}
+      <Dialog open={showPermissionDialog} onOpenChange={(open) => {
+        if (!open && hasPermission === null) {
+          // If closing without a decision, default to denied
+          setHasPermission(false);
+          savePermissionStatus('denied');
+        }
+        setShowPermissionDialog(open);
+      }}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Camera Access Required</DialogTitle>
+            <DialogDescription>
+              This application needs camera access to use the tracing features. 
+              Your camera will only be used within this application and is not shared with any third parties.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col items-center justify-center py-6">
+            <Camera size={48} className="mb-4 text-primary" />
+            <p className="text-center mb-4">
+              {hasPermission === false ? 
+                'Camera access was previously denied. Please allow access to continue.' : 
+                'Would you like to allow camera access?'}
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setShowPermissionDialog(false);
+              setHasPermission(false);
+              savePermissionStatus('denied');
+            }}>
+              Deny Access
+            </Button>
+            <Button onClick={requestCameraPermission} disabled={isLoading}>
+              {isLoading ? (
+                <span className="flex items-center">
+                  <span className="animate-spin h-4 w-4 mr-2 border-2 border-t-transparent rounded-full"></span>
+                  Processing...
+                </span>
+              ) : (
+                <>
+                  <ShieldCheck size={18} className="mr-2" /> Allow Access
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
       {/* Permission denied error */}
-      {hasPermission === false && (
+      {hasPermission === false && !showPermissionDialog && (
         <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center text-white bg-black/80 z-50">
           <CameraOff size={48} className="mb-4 text-red-500" />
           <h3 className="text-xl font-semibold mb-2">Camera Access Required</h3>
           <p className="mb-4">{errorMessage || 'Please allow camera access to use the tracing features.'}</p>
-          <Button onClick={startCamera} disabled={isLoading}>
+          <Button onClick={() => setShowPermissionDialog(true)} disabled={isLoading}>
             {isLoading ? (
               <span className="flex items-center">
                 <span className="animate-spin h-4 w-4 mr-2 border-2 border-t-transparent rounded-full"></span>
-                Trying...
+                Processing...
               </span>
             ) : (
               <>
-                <Camera size={18} className="mr-2" /> Try Again
+                <Camera size={18} className="mr-2" /> Grant Permission
               </>
             )}
           </Button>
